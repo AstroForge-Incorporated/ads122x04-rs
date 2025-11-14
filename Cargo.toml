@@ -13,5 +13,6 @@ homepage = "https://github.com/hacknus/ads122x04-rs"
 license = "Apache-2.0"
 
 [dependencies]
-embedded-hal = { version = "0.2", features = ["unproven"] }
-nb = "1"
+embedded-hal = { version = "1.0" }
+embedded-hal-nb = "1.0.0"
+nb = "1.1.0"

@@ -1,14 +1,11 @@
 //! I2C/UART interfaces
 
-use embedded_hal::{
-    blocking::i2c,
-    blocking::serial,
-    serial as serial_nb,
-};
+use embedded_hal::i2c;
+use embedded_hal_nb::serial;
 use nb::block;
 
-use crate::{Error, private};
 use crate::registers::*;
+use crate::{private, Error};
 
 /// I2C interface
 #[derive(Debug)]
@@ -34,8 +31,8 @@ pub trait WriteData: private::Sealed {
 }
 
 impl<I2C, E> WriteData for I2cInterface<I2C>
-    where
-        I2C: i2c::Write<Error=E>,
+where
+    I2C: i2c::I2c<Error = E>,
 {
     type Error = Error<E>;
     fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
@@ -46,24 +43,30 @@ impl<I2C, E> WriteData for I2cInterface<I2C>
     }
 
     fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
-        self.i2c.write(self.address, &[payload]).map_err(Error::CommError)
+        self.i2c
+            .write(self.address, &[payload])
+            .map_err(Error::CommError)
     }
 }
 
 impl<UART, E> WriteData for SerialInterface<UART>
-    where
-        UART: serial::Write<u8, Error=E> + serial_nb::Read<u8, Error=E>,
+where
+    UART: serial::Write<u8, Error = E> + serial::Read<u8, Error = E>,
 {
     type Error = Error<E>;
     fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
         let register = Commands::WReg as u8 | (register << 2); // write command
-        self.serial.bwrite_all(&[0x55, register, data]).map_err(Error::CommError)?;
-        self.serial.bflush().map_err(Error::CommError)
+        for byte in [0x55, register, data] {
+            block!(self.serial.write(byte)).map_err(Error::CommError)?;
+        }
+        block!(self.serial.flush()).map_err(Error::CommError)
     }
 
     fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
-        self.serial.bwrite_all(&[0x55, payload]).map_err(Error::CommError)?;
-        self.serial.bflush().map_err(Error::CommError)
+        for byte in [0x55, payload] {
+            block!(self.serial.write(byte)).map_err(Error::CommError)?;
+        }
+        block!(self.serial.flush()).map_err(Error::CommError)
     }
 }
 
@@ -78,8 +81,8 @@ pub trait ReadData: private::Sealed {
 }
 
 impl<I2C, E> ReadData for I2cInterface<I2C>
-    where
-        I2C: i2c::WriteRead<Error=E>,
+where
+    I2C: i2c::I2c<Error = E>,
 {
     type Error = Error<E>;
     fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
@@ -106,20 +109,24 @@ impl<I2C, E> ReadData for I2cInterface<I2C>
 }
 
 impl<UART, E> ReadData for SerialInterface<UART>
-    where
-        UART: serial::Write<u8, Error=E> + serial_nb::Read<u8, Error=E>,
+where
+    UART: serial::Write<u8, Error = E> + serial::Read<u8, Error = E>,
 {
     type Error = Error<E>;
     fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
         let register = Commands::RReg as u8 | (register << 2); // read command
-        self.serial.bwrite_all(&[0x55, register]).map_err(Error::CommError)?;
-        self.serial.bflush().map_err(Error::CommError)?;
+        for byte in [0x55, register] {
+            block!(self.serial.write(byte)).map_err(Error::CommError)?;
+        }
+        block!(self.serial.flush()).map_err(Error::CommError)?;
         block!(self.serial.read()).map_err(Error::CommError)
     }
 
     fn read_data(&mut self) -> Result<u32, Self::Error> {
-        self.serial.bwrite_all(&[0x55, Commands::RData as u8]).map_err(Error::CommError)?;
-        self.serial.bflush().map_err(Error::CommError)?;
+        for byte in [0x55, Commands::RData as u8] {
+            block!(self.serial.write(byte)).map_err(Error::CommError)?;
+        }
+        block!(self.serial.flush()).map_err(Error::CommError)?;
         let msb = block!(self.serial.read()).map_err(Error::CommError)?;
         let csb = block!(self.serial.read()).map_err(Error::CommError)?;
         let lsb = block!(self.serial.read()).map_err(Error::CommError)?;
