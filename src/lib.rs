@@ -29,6 +29,7 @@ mod private {
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Error enum for ADS122x04
 pub enum Error<E> {
     /// The input is shorted
