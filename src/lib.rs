@@ -188,7 +188,7 @@ where
                     return Err(Error::Timeout);
                 }
             }
-            offset += self.get_raw_adc()?;
+            offset += self.get_raw_adc_signed()?;
         }
         // store offset
         self.offset = offset / (NUM_AVG as i32);
@@ -368,10 +368,15 @@ where
     }
 
     /// Read the raw ADC value and subtract the offset
-    pub fn get_raw_adc(&mut self) -> Result<i32, Error<E>> {
+    pub fn get_raw_adc_signed(&mut self) -> Result<i32, Error<E>> {
         self.bus
             .read_data()
             .map(|val| self.raw_to_signed(val) - self.offset)
+    }
+
+    /// Get the raw adc value with no modification
+    pub fn get_raw_adc(&mut self) -> Result<u32, Error<E>> {
+        self.bus.read_data()
     }
 
     /// Read the voltage of the ADC
