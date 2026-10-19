@@ -1,6 +1,8 @@
 //! I2C/UART interfaces
+//!
+//! The UART interface still busy-waits on `nb` inside its async methods.
 
-use embedded_hal::i2c;
+use embedded_hal_async::i2c;
 use embedded_hal_nb::serial;
 use nb::block;
 
@@ -21,13 +23,14 @@ pub struct SerialInterface<UART> {
 }
 
 /// Write data
+#[allow(async_fn_in_trait)]
 pub trait WriteData: private::Sealed {
     /// Error type
     type Error;
     /// Write to an u8 register
-    fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error>;
+    async fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error>;
     /// Write data. The first element corresponds to the starting address.
-    fn write_data(&mut self, payload: u8) -> Result<(), Self::Error>;
+    async fn write_data(&mut self, payload: u8) -> Result<(), Self::Error>;
 }
 
 impl<I2C, E> WriteData for I2cInterface<I2C>
@@ -35,16 +38,18 @@ where
     I2C: i2c::I2c<Error = E>,
 {
     type Error = Error<E>;
-    fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
+    async fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
         let register = Commands::WReg as u8 | (register << 2); // write command
         self.i2c
             .write(self.address, &[register, data])
+            .await
             .map_err(Error::CommError)
     }
 
-    fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
+    async fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
         self.i2c
             .write(self.address, &[payload])
+            .await
             .map_err(Error::CommError)
     }
 }
@@ -54,7 +59,7 @@ where
     UART: serial::Write<u8, Error = E> + serial::Read<u8, Error = E>,
 {
     type Error = Error<E>;
-    fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
+    async fn write_register(&mut self, register: u8, data: u8) -> Result<(), Self::Error> {
         let register = Commands::WReg as u8 | (register << 2); // write command
         for byte in [0x55, register, data] {
             block!(self.serial.write(byte)).map_err(Error::CommError)?;
@@ -62,7 +67,7 @@ where
         block!(self.serial.flush()).map_err(Error::CommError)
     }
 
-    fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
+    async fn write_data(&mut self, payload: u8) -> Result<(), Self::Error> {
         for byte in [0x55, payload] {
             block!(self.serial.write(byte)).map_err(Error::CommError)?;
         }
@@ -71,13 +76,14 @@ where
 }
 
 /// Read data
+#[allow(async_fn_in_trait)]
 pub trait ReadData: private::Sealed {
     /// Error type
     type Error;
     /// Read an u8 register
-    fn read_register(&mut self, register: u8) -> Result<u8, Self::Error>;
+    async fn read_register(&mut self, register: u8) -> Result<u8, Self::Error>;
     /// Read some data. The first element corresponds to the starting address.
-    fn read_data(&mut self) -> Result<u32, Self::Error>;
+    async fn read_data(&mut self) -> Result<u32, Self::Error>;
 }
 
 impl<I2C, E> ReadData for I2cInterface<I2C>
@@ -85,19 +91,21 @@ where
     I2C: i2c::I2c<Error = E>,
 {
     type Error = Error<E>;
-    fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
+    async fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
         let register = Commands::RReg as u8 | (register << 2); // read command
         let mut buffer = [0];
         self.i2c
             .write_read(self.address, &[register], &mut buffer)
+            .await
             .map(|_| buffer[0])
             .map_err(Error::CommError)
     }
 
-    fn read_data(&mut self) -> Result<u32, Self::Error> {
+    async fn read_data(&mut self) -> Result<u32, Self::Error> {
         let mut buffer = [0, 0, 0];
         self.i2c
             .write_read(self.address, &[Commands::RData as u8], &mut buffer)
+            .await
             .map(|_| {
                 let msb = buffer[0];
                 let csb = buffer[1];
@@ -113,7 +121,7 @@ where
     UART: serial::Write<u8, Error = E> + serial::Read<u8, Error = E>,
 {
     type Error = Error<E>;
-    fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
+    async fn read_register(&mut self, register: u8) -> Result<u8, Self::Error> {
         let register = Commands::RReg as u8 | (register << 2); // read command
         for byte in [0x55, register] {
             block!(self.serial.write(byte)).map_err(Error::CommError)?;
@@ -122,7 +130,7 @@ where
         block!(self.serial.read()).map_err(Error::CommError)
     }
 
-    fn read_data(&mut self) -> Result<u32, Self::Error> {
+    async fn read_data(&mut self) -> Result<u32, Self::Error> {
         for byte in [0x55, Commands::RData as u8] {
             block!(self.serial.write(byte)).map_err(Error::CommError)?;
         }
